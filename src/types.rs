@@ -31,7 +31,7 @@ impl Atom {
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct Variable {
     pub name: String,
-    id: usize,
+    pub id: usize,
 }
 
 impl Variable {

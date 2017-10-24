@@ -2,9 +2,11 @@ use std::io::{self, BufRead};
 
 mod types;
 mod parser;
+mod display;
 
 use types::*;
 use parser::*;
+use display::*;
 
 fn main() {
     let mut knowledge = vec![];
@@ -16,11 +18,11 @@ fn main() {
             if let Ok(result) = parse_line(&mut line.chars().peekable()) {
                 match result {
                     Command::Assertion(assertion) => {
-                        println!("accepted: {:?}", assertion);
+                        println!("accepted: {}", assertion);
                         knowledge.push(assertion)
                     }
                     Command::Question(question) => {
-                        println!("asked: {:?}", question);
+                        println!("asked: {}", question);
                         println!("derivation result: {:?}", question.derive(&knowledge));
                     }
                 }
