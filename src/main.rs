@@ -20,11 +20,8 @@ fn main() {
                         knowledge.push(assertion)
                     }
                     Command::Question(question) => {
-                        println!("current knowledge:");
-                        for x in knowledge.iter() {
-                            println!("unify vs: {:?} -> {:?}", x, x.unify(&question));
-                        }
                         println!("asked: {:?}", question);
+                        println!("derivation result: {:?}", question.derive(&knowledge));
                     }
                 }
             }
