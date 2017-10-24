@@ -1,13 +1,50 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
+
+thread_local!{
+    static ID: RefCell<usize> = RefCell::new(0);
+}
+
+fn next_id() -> usize {
+    ID.with(|x| {
+        let ret = *x.borrow();
+        *x.borrow_mut() += 1;
+        ret
+    })
+}
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Atom {
     pub name: String,
 }
 
+impl Atom {
+    pub fn new(name: String) -> Self {
+        Atom { name: name }
+    }
+
+    fn instantiate(&self) -> Self {
+        self.clone()
+    }
+}
+
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct Variable {
     pub name: String,
+    id: usize,
+}
+
+impl Variable {
+    pub fn new(name: String) -> Self {
+        Variable {
+            name: name,
+            id: next_id(),
+        }
+    }
+
+    fn instantiate(&self) -> Self {
+        Self::new(self.name.clone())
+    }
 }
 
 // P(X, Y, Z, ...)
@@ -17,10 +54,28 @@ pub struct Predicate {
     pub arguments: List,
 }
 
+impl Predicate {
+    fn instantiate(&self) -> Self {
+        Predicate {
+            name: self.name.instantiate(),
+            arguments: self.arguments.instantiate(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Clause {
     pub result: Predicate,
     pub conditions: List,
+}
+
+impl Clause {
+    fn instantiate(&self) -> Self {
+        Clause {
+            result: self.result.instantiate(),
+            conditions: self.conditions.instantiate(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -32,6 +87,16 @@ pub enum List {
 impl List {
     fn iter(&self) -> ListIterator {
         ListIterator(self)
+    }
+
+    fn instantiate(&self) -> Self {
+        use List::*;
+        match self {
+            &Nil => Nil,
+            &Cons(ref term, ref tail) => {
+                Cons(Box::new(term.instantiate()), Box::new(tail.instantiate()))
+            }
+        }
     }
 }
 
@@ -93,9 +158,20 @@ impl List {
 }
 
 impl Term {
+    fn instantiate(&self) -> Self {
+        use Term::*;
+        match self {
+            &Atom(ref atom) => Atom(atom.instantiate()),
+            &Var(ref var) => Var(var.instantiate()),
+            &Pred(ref pred) => Pred(pred.instantiate()),
+            &Clause(ref clause) => Clause(clause.instantiate()),
+            &List(ref list) => List(list.instantiate()),
+        }
+    }
+
     pub fn derive(&self, knowledge: &Vec<Term>) -> UnifyResult {
-        for fact in knowledge.iter() {
-            let unifications = self.unify(fact, knowledge);
+        for fact in knowledge.iter().map(Term::instantiate) {
+            let unifications = self.unify(&fact, knowledge);
             if unifications.is_ok() {
                 return unifications;
             }
