@@ -23,7 +23,7 @@ impl Atom {
         Atom { name: name }
     }
 
-    fn instantiate(&self, _: &mut HashMap<Variable, Variable>) -> Self {
+    pub fn instantiate(&self, _: &mut HashMap<Variable, Variable>) -> Self {
         self.clone()
     }
 }
@@ -46,7 +46,7 @@ impl Variable {
         }
     }
 
-    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
+    pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         dict.entry(self.clone())
             .or_insert_with(|| Self::brand_new(self.name.clone()))
             .clone()
@@ -61,7 +61,7 @@ pub struct Predicate {
 }
 
 impl Predicate {
-    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
+    pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         Predicate {
             name: self.name.instantiate(dict),
             arguments: self.arguments.instantiate(dict),
@@ -76,7 +76,7 @@ pub struct Clause {
 }
 
 impl Clause {
-    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
+    pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         Clause {
             result: self.result.instantiate(dict),
             conditions: self.conditions.instantiate(dict),
@@ -95,7 +95,7 @@ impl List {
         ListIterator(self)
     }
 
-    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
+    pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         use List::*;
         match self {
             &Nil => Nil,
@@ -167,7 +167,7 @@ impl List {
 }
 
 impl Term {
-    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
+    pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         use Term::*;
         match self {
             &Atom(ref atom) => Atom(atom.instantiate(dict)),

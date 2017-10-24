@@ -1,4 +1,5 @@
 use std::iter::Peekable;
+use std::collections::HashMap;
 
 use types::*;
 
@@ -168,12 +169,16 @@ pub fn parse_line<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> Result<Co
                 consume_spaces(iter);
                 if let Some(&'.') = iter.peek() {
                     iter.next();
-                    return Ok(Command::Question(q));
+                    return Ok(Command::Question(q.instantiate(&mut HashMap::new())));
                 }
             }
             Err(())
         }
-        Some(_) => clause(iter).map(Command::Assertion),
+        Some(_) => {
+            clause(iter)
+                .map(|c| c.instantiate(&mut HashMap::new()))
+                .map(Command::Assertion)
+        }
         _ => Err(()),
     }
 }
