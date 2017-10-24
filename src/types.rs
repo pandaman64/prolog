@@ -95,9 +95,9 @@ impl List {
 impl Term {
     pub fn derive(&self, knowledge: &Vec<Term>) -> UnifyResult {
         for fact in knowledge.iter() {
-            let unification = self.unify(fact, knowledge);
-            if unification.is_ok() {
-                return unification;
+            let unifications = self.unify(fact, knowledge);
+            if unifications.is_ok() {
+                return unifications;
             }
         }
         Err("cannot derive it".to_string())
@@ -107,31 +107,31 @@ impl Term {
         use Term::*;
         match (self, other) {
             (&Var(ref lhs), ref rhs) => {
-                let mut assignment = HashMap::new();
-                assignment.insert(lhs.clone(), (*rhs).clone());
-                Ok(assignment)
+                let mut unifications = HashMap::new();
+                unifications.insert(lhs.clone(), (*rhs).clone());
+                Ok(unifications)
             }
             (ref lhs, &Var(ref rhs)) => {
-                let mut assignment = HashMap::new();
-                assignment.insert(rhs.clone(), (*lhs).clone());
-                Ok(assignment)
+                let mut unifications = HashMap::new();
+                unifications.insert(rhs.clone(), (*lhs).clone());
+                Ok(unifications)
             }
             (&Atom(ref lhs), &Atom(ref rhs)) if *lhs == *rhs => Ok(HashMap::new()),
             (&Pred(ref lhs), &Pred(ref rhs)) => lhs.unify(rhs, knowledge),
             (&Pred(ref pred), &Clause(ref clause)) |
             (&Clause(ref clause), &Pred(ref pred)) => {
-                let mut assignment = pred.unify(&clause.result, knowledge)?;
+                let mut unifications = pred.unify(&clause.result, knowledge)?;
                 for condition in clause.conditions.iter() {
                     match condition.derive(knowledge) {
                         e @ Err(_) => return e,
-                        Ok(mut uni) => {
-                            for (k, v) in uni.drain() {
-                                assignment.insert(k, v);
+                        Ok(mut u) => {
+                            for (k, v) in u.drain() {
+                                unifications.insert(k, v);
                             }
                         }
                     }
                 }
-                Ok(assignment)
+                Ok(unifications)
             }
             (&List(ref lhs), &List(ref rhs)) => lhs.unify(rhs, knowledge),
             _ => Err("cannot unify".to_string()),
