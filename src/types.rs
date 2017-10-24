@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::cell::RefCell;
 
 thread_local!{
-    static ID: RefCell<usize> = RefCell::new(0);
+    static ID: RefCell<usize> = RefCell::new(1);
 }
 
 fn next_id() -> usize {
@@ -23,7 +23,7 @@ impl Atom {
         Atom { name: name }
     }
 
-    fn instantiate(&self) -> Self {
+    fn instantiate(&self, _: &mut HashMap<Variable, Variable>) -> Self {
         self.clone()
     }
 }
@@ -35,15 +35,21 @@ pub struct Variable {
 }
 
 impl Variable {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, id: usize) -> Self {
+        Variable { name: name, id: id }
+    }
+
+    pub fn brand_new(name: String) -> Self {
         Variable {
             name: name,
             id: next_id(),
         }
     }
 
-    fn instantiate(&self) -> Self {
-        Self::new(self.name.clone())
+    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
+        dict.entry(self.clone())
+            .or_insert_with(|| Self::brand_new(self.name.clone()))
+            .clone()
     }
 }
 
@@ -55,10 +61,10 @@ pub struct Predicate {
 }
 
 impl Predicate {
-    fn instantiate(&self) -> Self {
+    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         Predicate {
-            name: self.name.instantiate(),
-            arguments: self.arguments.instantiate(),
+            name: self.name.instantiate(dict),
+            arguments: self.arguments.instantiate(dict),
         }
     }
 }
@@ -70,10 +76,10 @@ pub struct Clause {
 }
 
 impl Clause {
-    fn instantiate(&self) -> Self {
+    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         Clause {
-            result: self.result.instantiate(),
-            conditions: self.conditions.instantiate(),
+            result: self.result.instantiate(dict),
+            conditions: self.conditions.instantiate(dict),
         }
     }
 }
@@ -89,12 +95,15 @@ impl List {
         ListIterator(self)
     }
 
-    fn instantiate(&self) -> Self {
+    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         use List::*;
         match self {
             &Nil => Nil,
             &Cons(ref term, ref tail) => {
-                Cons(Box::new(term.instantiate()), Box::new(tail.instantiate()))
+                Cons(
+                    Box::new(term.instantiate(dict)),
+                    Box::new(tail.instantiate(dict)),
+                )
             }
         }
     }
@@ -158,19 +167,22 @@ impl List {
 }
 
 impl Term {
-    fn instantiate(&self) -> Self {
+    fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         use Term::*;
         match self {
-            &Atom(ref atom) => Atom(atom.instantiate()),
-            &Var(ref var) => Var(var.instantiate()),
-            &Pred(ref pred) => Pred(pred.instantiate()),
-            &Clause(ref clause) => Clause(clause.instantiate()),
-            &List(ref list) => List(list.instantiate()),
+            &Atom(ref atom) => Atom(atom.instantiate(dict)),
+            &Var(ref var) => Var(var.instantiate(dict)),
+            &Pred(ref pred) => Pred(pred.instantiate(dict)),
+            &Clause(ref clause) => Clause(clause.instantiate(dict)),
+            &List(ref list) => List(list.instantiate(dict)),
         }
     }
 
     pub fn derive(&self, knowledge: &Vec<Term>) -> UnifyResult {
-        for fact in knowledge.iter().map(Term::instantiate) {
+        for fact in knowledge.iter().map(
+            |fact| fact.instantiate(&mut HashMap::new()),
+        )
+        {
             let unifications = self.unify(&fact, knowledge);
             if unifications.is_ok() {
                 return unifications;

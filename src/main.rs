@@ -6,7 +6,6 @@ mod display;
 
 use types::*;
 use parser::*;
-use display::*;
 
 fn main() {
     let mut knowledge = vec![];
@@ -23,7 +22,15 @@ fn main() {
                     }
                     Command::Question(question) => {
                         println!("asked: {}", question);
-                        println!("derivation result: {:?}", question.derive(&knowledge));
+                        match question.derive(&knowledge) {
+                            Err(_) => println!("false"),
+                            Ok(substitutions) => {
+                                println!("true");
+                                for (k, v) in substitutions.iter() {
+                                    println!("  {} => {}", k, v);
+                                }
+                            }
+                        }
                     }
                 }
             }

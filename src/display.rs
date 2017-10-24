@@ -57,4 +57,3 @@ impl Display for Term {
         }
     }
 }
-

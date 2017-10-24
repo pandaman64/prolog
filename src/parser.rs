@@ -58,7 +58,7 @@ fn atom<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> Result<Atom, ParseE
 }
 
 fn variable<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> Result<Variable, ParseError> {
-    Ok(Variable::new(identifier(iter)))
+    Ok(Variable::new(identifier(iter), 0))
 }
 
 fn arguments_impl<I: Iterator<Item = char>>(
