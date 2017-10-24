@@ -225,4 +225,17 @@ impl Term {
             _ => Err("cannot unify".to_string()),
         }
     }
+
+    fn apply(&mut self, substitutions: &Assignment) {
+        use Term::*;
+        let replace = if let Var(ref v) = *self {
+            substitutions.get(v)
+        } else {
+            None
+        };
+
+        if let Some(term) = replace {
+            *self = term.clone();
+        }
+    }
 }
