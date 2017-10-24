@@ -3,12 +3,12 @@ use std::iter::Peekable;
 use types::*;
 
 type ParseError = ();
-type ParseResult = Result<Box<Term>, ParseError>;
+type ParseResult = Result<Term, ParseError>;
 
 #[derive(Debug)]
 pub enum Command {
-    Assertion(Box<Term>),
-    Question(Box<Term>),
+    Assertion(Term),
+    Question(Term),
 }
 
 /* Parser
@@ -75,7 +75,7 @@ fn arguments_impl<I: Iterator<Item = char>>(
         Some(&',') => {
             iter.next();
             let arg = term(iter)?;
-            arguments_impl(iter, end).map(|args| List::Cons(arg, Box::new(args)))
+            arguments_impl(iter, end).map(|args| List::Cons(Box::new(arg), Box::new(args)))
         }
         _ => Err(()),
     }
@@ -91,12 +91,12 @@ fn arguments<I: Iterator<Item = char>>(
         None => Err(()),
         _ => {
             let first = term(iter)?;
-            arguments_impl(iter, end).map(|args| List::Cons(first, Box::new(args)))
+            arguments_impl(iter, end).map(|args| List::Cons(Box::new(first), Box::new(args)))
         }
     }
 }
 
-fn predicate<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
+fn predicate<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> Result<Predicate, ParseError> {
     consume_spaces(iter);
     let p = atom(iter)?;
 
@@ -106,12 +106,15 @@ fn predicate<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
             iter.next();
             let args = arguments(iter, ')')?;
 
-            Ok(Box::new(Predicate {
+            Ok(Predicate {
                 name: p,
                 arguments: args,
-            }))
+            })
         }
-        _ => Ok(Box::new(p)),
+        _ => Ok(Predicate {
+            name: p,
+            arguments: List::Nil,
+        }),
     }
 }
 
@@ -123,9 +126,9 @@ fn term<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
         None => Err(()),
         Some(c) => {
             if c.is_lowercase() {
-                predicate(iter)
+                predicate(iter).map(Term::Pred)
             } else if c.is_uppercase() {
-                Ok(Box::new(variable(iter)?))
+                Ok(Term::Var(variable(iter)?))
             } else {
                 Err(())
             }
@@ -134,15 +137,15 @@ fn term<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
 }
 
 fn clause<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
-    let result = term(iter)?;
+    let result = predicate(iter)?;
     consume_spaces(iter);
     match iter.peek() {
-        Some(&'.') => Ok(result),
+        Some(&'.') => Ok(Term::Pred(result)),
         Some(&':') => {
             iter.next();
             if let Some('-') = iter.next() {
                 let conditions = arguments(iter, '.')?;
-                Ok(Box::new(Clause {
+                Ok(Term::Clause(Clause {
                     result: result,
                     conditions: conditions,
                 }))

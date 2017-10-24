@@ -6,19 +6,28 @@ mod parser;
 use types::*;
 use parser::*;
 
-#[derive(Debug)]
-struct Knowledge {
-    atoms: Vec<Atom>,
-    predicates: Vec<Predicate>,
-}
-
 fn main() {
+    let mut knowledge = vec![];
+
     let stdin = io::stdin();
     let stdin = stdin.lock();
     for line in stdin.lines() {
-        println!(
-            "{:?}",
-            line.map(|line| parse_line(&mut line.chars().peekable()))
-        );
+        if let Ok(line) = line {
+            if let Ok(result) = parse_line(&mut line.chars().peekable()) {
+                match result {
+                    Command::Assertion(assertion) => {
+                        println!("accepted: {:?}", assertion);
+                        knowledge.push(assertion)
+                    }
+                    Command::Question(question) => {
+                        println!("current knowledge:");
+                        for x in knowledge.iter() {
+                            println!("unify vs: {:?} -> {:?}", x, x.unify(&question));
+                        }
+                        println!("asked: {:?}", question);
+                    }
+                }
+            }
+        }
     }
 }
