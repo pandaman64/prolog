@@ -146,6 +146,10 @@ impl Predicate {
             Err("unifying different predicates".to_string())
         }
     }
+
+    fn apply(&mut self, substitutions: &Assignment) {
+        self.arguments.apply(substitutions)
+    }
 }
 
 impl List {
@@ -162,6 +166,13 @@ impl List {
                 Ok(head)
             }
             _ => Err("cannot unify lists".to_string()),
+        }
+    }
+
+    fn apply(&mut self, substitutions: &Assignment) {
+        if let List::Cons(ref mut head, ref mut tail) = *self {
+            head.apply(substitutions);
+            tail.apply(substitutions);
         }
     }
 }
@@ -228,10 +239,17 @@ impl Term {
 
     fn apply(&mut self, substitutions: &Assignment) {
         use Term::*;
-        let replace = if let Var(ref v) = *self {
-            substitutions.get(v)
-        } else {
-            None
+        let replace = match *self {
+            Var(ref v) => substitutions.get(v),
+            Pred(ref mut pred) => {
+                pred.apply(substitutions);
+                None
+            }
+            List(ref mut list) => {
+                list.apply(substitutions);
+                None
+            }
+            _ => None,
         };
 
         if let Some(term) = replace {
