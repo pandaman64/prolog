@@ -8,6 +8,7 @@ use types::*;
 use parser::*;
 
 fn main() {
+    set_debug(true);
     let mut knowledge = vec![];
 
     let stdin = io::stdin();

@@ -13,6 +13,22 @@ fn next_id() -> usize {
     })
 }
 
+thread_local!{
+    static DEBUG: RefCell<bool> = RefCell::new(false);
+}
+
+pub fn set_debug(b: bool) {
+    DEBUG.with(|d| *d.borrow_mut() = b);
+}
+
+fn get_debug() -> bool {
+    DEBUG.with(|d| *d.borrow())
+}
+
+macro_rules! debug_println {
+    ($( $arg:expr ),*) => { if get_debug() { println!($( $arg ),*) }}
+}
+
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Atom {
     pub name: String,
@@ -182,16 +198,14 @@ impl List {
 }
 
 fn apply(s1: &mut Assignment, mut s2: Assignment, knowledge: &Knowledge) -> Result<(), String> {
-    /*
-    println!("apply");
+    debug_println!("apply");
     for (k, v) in s2.0.iter() {
-        println!("\t{} => {}", k, v);
+        debug_println!("\t{} => {}", k, v);
     }
-    println!("to");
+    debug_println!("to");
     for (k, v) in s1.0.iter() {
-        println!("\t{} => {}", k, v);
+        debug_println!("\t{} => {}", k, v);
     }
-    */
     for (_, v) in s1.0.iter_mut() {
         v.apply(&s2);
     }
@@ -210,12 +224,10 @@ fn apply(s1: &mut Assignment, mut s2: Assignment, knowledge: &Knowledge) -> Resu
             s1.0.insert(k, v2);
         }
     }
-    /*
-    println!("result");
+    debug_println!("result");
     for (k, v) in s1.0.iter() {
-        println!("\t{} => {}", k, v);
+        debug_println!("\t{} => {}", k, v);
     }
-    */
     Ok(())
 }
 
@@ -230,19 +242,17 @@ impl Term {
     }
 
     pub fn derive(&self, knowledge: &Knowledge) -> UnifyResult {
-        /*
-        println!("deriving {} with:", self);
+        debug_println!("deriving {} with:", self);
         for fact in knowledge.iter() {
-            println!("\t{}", fact);
+            debug_println!("\t{}", fact);
         }
-        */
 
         for fact in knowledge.iter().map(
             |fact| fact.instantiate(&mut HashMap::new()),
         )
         {
             if let Ok(mut substitutions) = self.unify(&Term::Pred(fact.result.clone()), knowledge) {
-                //println!("unifying {} and {} success", self, fact.result);
+                debug_println!("unifying {} and {} success", self, fact.result);
                 let mut ok = true;
                 for mut condition in fact.conditions.iter().map(Clone::clone) {
                     condition.apply(&substitutions);
@@ -259,24 +269,24 @@ impl Term {
                     return Ok(substitutions);
                 }
             }
-            //println!("unifying {} and {} failed", self, fact.result);
+            debug_println!("unifying {} and {} failed", self, fact.result);
         }
         Err("cannot derive it".to_string())
     }
 
     pub fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
-        //println!("unifying {} and {}", self, other);
+        debug_println!("unifying {} and {}", self, other);
         use Term::*;
         match (self, other) {
             (&Var(ref v), other) => {
                 let mut unifications = Assignment::new();
-                //println!("add substution {} => {}", v, other);
+                debug_println!("add substution {} => {}", v, other);
                 unifications.0.insert(v.clone(), other.clone());
                 Ok(unifications)
             }
             (other, &Var(ref v)) => {
                 let mut unifications = Assignment::new();
-                //println!("add substution {} => {}", v, other);
+                debug_println!("add substution {} => {}", v, other);
                 unifications.0.insert(v.clone(), other.clone());
                 Ok(unifications)
             }
@@ -301,7 +311,7 @@ impl Term {
         };
 
         if let Some(term) = replace {
-            //println!("replace {} with {}", self, term);
+            debug_println!("replace {} with {}", self, term);
             *self = term.clone();
         }
     }
