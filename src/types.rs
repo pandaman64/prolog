@@ -137,9 +137,10 @@ pub enum Term {
 
 type Assignment = HashMap<Variable, Term>;
 type UnifyResult = Result<Assignment, String>;
+type Knowledge = Vec<Clause>;
 
 impl Predicate {
-    fn unify(&self, other: &Self, knowledge: &Vec<Term>) -> UnifyResult {
+    fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
         if self.name == other.name {
             self.arguments.unify(&other.arguments, knowledge)
         } else {
@@ -153,7 +154,7 @@ impl Predicate {
 }
 
 impl List {
-    fn unify(&self, other: &Self, knowledge: &Vec<Term>) -> UnifyResult {
+    fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
         use List::*;
         match (self, other) {
             (&Nil, &Nil) => Ok(HashMap::new()),
@@ -189,12 +190,12 @@ impl Term {
         }
     }
 
-    pub fn derive(&self, knowledge: &Vec<Term>) -> UnifyResult {
+    pub fn derive(&self, knowledge: &Knowledge) -> UnifyResult {
         for fact in knowledge.iter().map(
             |fact| fact.instantiate(&mut HashMap::new()),
         )
         {
-            let unifications = self.unify(&fact, knowledge);
+            let unifications = self.unify(&Term::Clause(fact), knowledge);
             if unifications.is_ok() {
                 return unifications;
             }
@@ -202,7 +203,7 @@ impl Term {
         Err("cannot derive it".to_string())
     }
 
-    pub fn unify(&self, other: &Self, knowledge: &Vec<Term>) -> UnifyResult {
+    pub fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
         use Term::*;
         match (self, other) {
             (&Var(ref lhs), ref rhs) => {
@@ -220,7 +221,11 @@ impl Term {
             (&Pred(ref pred), &Clause(ref clause)) |
             (&Clause(ref clause), &Pred(ref pred)) => {
                 let mut unifications = pred.unify(&clause.result, knowledge)?;
-                for condition in clause.conditions.iter() {
+                for mut condition in clause.conditions.iter().map(|c| {
+                    c.instantiate(&mut HashMap::new())
+                })
+                {
+                    condition.apply(&unifications);
                     match condition.derive(knowledge) {
                         e @ Err(_) => return e,
                         Ok(mut u) => {

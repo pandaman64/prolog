@@ -8,7 +8,7 @@ type ParseResult = Result<Term, ParseError>;
 
 #[derive(Debug)]
 pub enum Command {
-    Assertion(Term),
+    Assertion(Clause),
     Question(Term),
 }
 
@@ -137,19 +137,25 @@ fn term<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
     }
 }
 
-fn clause<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> ParseResult {
+fn clause<I: Iterator<Item = char>>(iter: &mut Peekable<I>) -> Result<Clause, ParseError> {
     let result = predicate(iter)?;
     consume_spaces(iter);
     match iter.peek() {
-        Some(&'.') => Ok(Term::Pred(result)),
+        Some(&'.') => {
+            iter.next();
+            Ok(Clause {
+                result: result,
+                conditions: List::Nil,
+            })
+        }
         Some(&':') => {
             iter.next();
             if let Some('-') = iter.next() {
                 let conditions = arguments(iter, '.')?;
-                Ok(Term::Clause(Clause {
+                Ok(Clause {
                     result: result,
                     conditions: conditions,
-                }))
+                })
             } else {
                 Err(())
             }
