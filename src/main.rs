@@ -26,7 +26,7 @@ fn main() {
                             Err(_) => println!("false"),
                             Ok(substitutions) => {
                                 println!("true");
-                                for (k, v) in substitutions.iter() {
+                                for (k, v) in substitutions.0.iter() {
                                     println!("  {} => {}", k, v);
                                 }
                             }

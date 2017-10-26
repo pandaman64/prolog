@@ -128,14 +128,19 @@ impl<'a> Iterator for ListIterator<'a> {
 
 #[derive(Clone, Debug)]
 pub enum Term {
-    Atom(Atom),
     Var(Variable),
     Pred(Predicate),
-    Clause(Clause),
     List(List),
 }
 
-type Assignment = HashMap<Variable, Term>;
+pub struct Assignment(pub HashMap<Variable, Term>);
+
+impl Assignment {
+    fn new() -> Self {
+        Assignment(HashMap::new())
+    }
+}
+
 type UnifyResult = Result<Assignment, String>;
 type Knowledge = Vec<Clause>;
 
@@ -157,13 +162,11 @@ impl List {
     fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
         use List::*;
         match (self, other) {
-            (&Nil, &Nil) => Ok(HashMap::new()),
+            (&Nil, &Nil) => Ok(Assignment::new()),
             (&Cons(ref lx, ref lxs), &Cons(ref rx, ref rxs)) => {
                 let mut head = lx.unify(rx, knowledge)?;
-                let mut tail = lxs.unify(rxs, knowledge)?;
-                for (k, v) in tail.drain() {
-                    head.insert(k, v);
-                }
+                let tail = lxs.unify(rxs, knowledge)?;
+                apply(&mut head, tail);
                 Ok(head)
             }
             _ => Err("cannot unify lists".to_string()),
@@ -178,65 +181,96 @@ impl List {
     }
 }
 
+fn apply(s1: &mut Assignment, mut s2: Assignment) {
+    /*
+    println!("apply");
+    for (k, v) in s2.0.iter() {
+        println!("\t{} => {}", k, v);
+    }
+    println!("to");
+    for (k, v) in s1.0.iter() {
+        println!("\t{} => {}", k, v);
+    }
+    */
+    for (_, v) in s1.0.iter_mut() {
+        v.apply(&s2);
+    }
+    for (_, v) in s2.0.iter_mut() {
+        v.apply(s1);
+    }
+    for (k, v) in s2.0.drain() {
+        s1.0.insert(k, v);
+    }
+    /*
+    println!("result");
+    for (k, v) in s1.0.iter() {
+        println!("\t{} => {}", k, v);
+    }
+    */
+}
+
 impl Term {
     pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         use Term::*;
         match self {
-            &Atom(ref atom) => Atom(atom.instantiate(dict)),
             &Var(ref var) => Var(var.instantiate(dict)),
             &Pred(ref pred) => Pred(pred.instantiate(dict)),
-            &Clause(ref clause) => Clause(clause.instantiate(dict)),
             &List(ref list) => List(list.instantiate(dict)),
         }
     }
 
     pub fn derive(&self, knowledge: &Knowledge) -> UnifyResult {
+        /*
+        println!("deriving {} with:", self);
+        for fact in knowledge.iter() {
+            println!("\t{}", fact);
+        }
+        */
+
         for fact in knowledge.iter().map(
             |fact| fact.instantiate(&mut HashMap::new()),
         )
         {
-            let unifications = self.unify(&Term::Clause(fact), knowledge);
-            if unifications.is_ok() {
-                return unifications;
+            if let Ok(mut substitutions) = self.unify(&Term::Pred(fact.result.clone()), knowledge) {
+                //println!("unifying {} and {} success", self, fact.result);
+                let mut ok = true;
+                for mut condition in fact.conditions.iter().map(Clone::clone) {
+                    condition.apply(&substitutions);
+                    match condition.derive(knowledge) {
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                        Ok(u) => apply(&mut substitutions, u),
+                    }
+                }
+
+                if ok {
+                    return Ok(substitutions);
+                }
             }
+            //println!("unifying {} and {} failed", self, fact.result);
         }
         Err("cannot derive it".to_string())
     }
 
     pub fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
+        //println!("unifying {} and {}", self, other);
         use Term::*;
         match (self, other) {
-            (&Var(ref lhs), ref rhs) => {
-                let mut unifications = HashMap::new();
-                unifications.insert(lhs.clone(), (*rhs).clone());
+            (&Var(ref v), other) => {
+                let mut unifications = Assignment::new();
+                //println!("add substution {} => {}", v, other);
+                unifications.0.insert(v.clone(), other.clone());
                 Ok(unifications)
             }
-            (ref lhs, &Var(ref rhs)) => {
-                let mut unifications = HashMap::new();
-                unifications.insert(rhs.clone(), (*lhs).clone());
+            (other, &Var(ref v)) => {
+                let mut unifications = Assignment::new();
+                //println!("add substution {} => {}", v, other);
+                unifications.0.insert(v.clone(), other.clone());
                 Ok(unifications)
             }
-            (&Atom(ref lhs), &Atom(ref rhs)) if *lhs == *rhs => Ok(HashMap::new()),
             (&Pred(ref lhs), &Pred(ref rhs)) => lhs.unify(rhs, knowledge),
-            (&Pred(ref pred), &Clause(ref clause)) |
-            (&Clause(ref clause), &Pred(ref pred)) => {
-                let mut unifications = pred.unify(&clause.result, knowledge)?;
-                for mut condition in clause.conditions.iter().map(|c| {
-                    c.instantiate(&mut HashMap::new())
-                })
-                {
-                    condition.apply(&unifications);
-                    match condition.derive(knowledge) {
-                        e @ Err(_) => return e,
-                        Ok(mut u) => {
-                            for (k, v) in u.drain() {
-                                unifications.insert(k, v);
-                            }
-                        }
-                    }
-                }
-                Ok(unifications)
-            }
             (&List(ref lhs), &List(ref rhs)) => lhs.unify(rhs, knowledge),
             _ => Err("cannot unify".to_string()),
         }
@@ -245,7 +279,7 @@ impl Term {
     fn apply(&mut self, substitutions: &Assignment) {
         use Term::*;
         let replace = match *self {
-            Var(ref v) => substitutions.get(v),
+            Var(ref v) => substitutions.0.get(v),
             Pred(ref mut pred) => {
                 pred.apply(substitutions);
                 None
@@ -254,10 +288,10 @@ impl Term {
                 list.apply(substitutions);
                 None
             }
-            _ => None,
         };
 
         if let Some(term) = replace {
+            //println!("replace {} with {}", self, term);
             *self = term.clone();
         }
     }

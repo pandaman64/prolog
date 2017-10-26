@@ -49,10 +49,8 @@ impl Display for Term {
     fn fmt(&self, f: &mut Formatter) -> Result {
         use Term::*;
         match self {
-            &Atom(ref atom) => atom.fmt(f),
             &Var(ref var) => var.fmt(f),
             &Pred(ref pred) => pred.fmt(f),
-            &Clause(ref clause) => clause.fmt(f),
             &List(ref list) => list.fmt(f),
         }
     }
