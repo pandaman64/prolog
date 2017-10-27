@@ -182,7 +182,7 @@ impl List {
             (&Cons(ref lx, ref lxs), &Cons(ref rx, ref rxs)) => {
                 let mut head = lx.unify(rx, knowledge)?;
                 let tail = lxs.unify(rxs, knowledge)?;
-                apply(&mut head, tail, knowledge)?;
+                head.apply(tail, knowledge)?;
                 Ok(head)
             }
             _ => Err("cannot unify lists".to_string()),
@@ -197,38 +197,40 @@ impl List {
     }
 }
 
-fn apply(s1: &mut Assignment, mut s2: Assignment, knowledge: &Knowledge) -> Result<(), String> {
-    debug_println!("apply");
-    for (k, v) in s2.0.iter() {
-        debug_println!("\t{} => {}", k, v);
-    }
-    debug_println!("to");
-    for (k, v) in s1.0.iter() {
-        debug_println!("\t{} => {}", k, v);
-    }
-    for (_, v) in s1.0.iter_mut() {
-        v.apply(&s2);
-    }
-    for (_, v) in s2.0.iter_mut() {
-        v.apply(s1);
-    }
-    for (k, v2) in s2.0.drain() {
-        let s = if let Some(v1) = s1.0.get(&k) {
-            Some(v1.clone().unify(&v2, knowledge)?)
-        } else {
-            None
-        };
-        if let Some(s) = s {
-            apply(s1, s, knowledge)?;
-        } else {
-            s1.0.insert(k, v2);
+impl Assignment {
+    fn apply(&mut self, mut s2: Assignment, knowledge: &Knowledge) -> Result<(), String> {
+        debug_println!("apply");
+        for (k, v) in s2.0.iter() {
+            debug_println!("\t{} => {}", k, v);
         }
+        debug_println!("to");
+        for (k, v) in self.0.iter() {
+            debug_println!("\t{} => {}", k, v);
+        }
+        for (_, v) in self.0.iter_mut() {
+            v.apply(&s2);
+        }
+        for (_, v) in s2.0.iter_mut() {
+            v.apply(self);
+        }
+        for (k, v2) in s2.0.drain() {
+            let s = if let Some(v1) = self.0.get(&k) {
+                Some(v1.clone().unify(&v2, knowledge)?)
+            } else {
+                None
+            };
+            if let Some(s) = s {
+                self.apply(s, knowledge)?;
+            } else {
+                self.0.insert(k, v2);
+            }
+        }
+        debug_println!("result");
+        for (k, v) in self.0.iter() {
+            debug_println!("\t{} => {}", k, v);
+        }
+        Ok(())
     }
-    debug_println!("result");
-    for (k, v) in s1.0.iter() {
-        debug_println!("\t{} => {}", k, v);
-    }
-    Ok(())
 }
 
 impl Term {
@@ -261,7 +263,7 @@ impl Term {
                             ok = false;
                             break;
                         }
-                        Ok(u) => apply(&mut substitutions, u, knowledge)?,
+                        Ok(u) => substitutions.apply(u, knowledge)?,
                     }
                 }
 
