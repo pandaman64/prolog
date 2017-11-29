@@ -15,6 +15,7 @@ fn next_id() -> usize {
 
 thread_local!{
     static DEBUG: RefCell<bool> = RefCell::new(false);
+    static LEVEL: RefCell<usize> = RefCell::new(0);
 }
 
 pub fn set_debug(b: bool) {
@@ -25,8 +26,27 @@ fn get_debug() -> bool {
     DEBUG.with(|d| *d.borrow())
 }
 
+fn shift() {
+    LEVEL.with(|l| *l.borrow_mut() += 1);
+}
+
+fn unshift() {
+    LEVEL.with(|l| *l.borrow_mut() -= 1);
+}
+
+fn get_level() -> usize {
+    LEVEL.with(|l| *l.borrow())
+}
+
 macro_rules! debug_println {
-    ($( $arg:expr ),*) => { if get_debug() { println!($( $arg ),*) }}
+    ($( $arg:expr ),*) => { 
+        if get_debug() { 
+            for _ in 0..get_level() {
+                print!("  ");
+            }
+            println!($( $arg ),*);
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -244,6 +264,7 @@ impl Term {
     }
 
     pub fn derive(&self, knowledge: &Knowledge) -> UnifyResult {
+        shift();
         debug_println!("deriving {} with:", self);
         for fact in knowledge.iter() {
             debug_println!("\t{}", fact);
@@ -268,11 +289,13 @@ impl Term {
                 }
 
                 if ok {
+                    unshift();
                     return Ok(substitutions);
                 }
             }
             debug_println!("unifying {} and {} failed", self, fact.result);
         }
+        unshift();
         Err("cannot derive it".to_string())
     }
 
