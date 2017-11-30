@@ -1,4 +1,5 @@
 use std::io::{self, BufRead};
+use std::collections::HashMap;
 
 mod types;
 mod parser;
@@ -8,7 +9,7 @@ use types::*;
 use parser::*;
 
 fn main() {
-    set_debug(true);
+    set_debug(false);
     let mut knowledge = vec![];
 
     let stdin = io::stdin();
@@ -23,11 +24,12 @@ fn main() {
                     }
                     Command::Question(question) => {
                         println!("asked: {}", question);
-                        match question.derive(&knowledge) {
-                            Err(_) => println!("false"),
-                            Ok(substitutions) => {
+                        let mut subst = HashMap::new();
+                        match question.derive(&knowledge, &mut subst) {
+                            Err(error) => println!("false: {}", error),
+                            Ok(()) => {
                                 println!("true");
-                                for (k, v) in substitutions.0.iter() {
+                                for (k, v) in subst.iter() {
                                     println!("  {} => {}", k, v);
                                 }
                             }

@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::cell::RefCell;
+use std::rc::Rc;
+use std::cmp::{PartialEq, Eq};
+use std::hash::{Hash, Hasher};
 
 thread_local!{
     static ID: RefCell<usize> = RefCell::new(1);
@@ -64,21 +67,37 @@ impl Atom {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Variable {
     pub name: String,
     pub id: usize,
+    pub assignment: Rc<RefCell<Option<Term>>>
+}
+
+impl PartialEq for Variable {
+    fn eq(&self, other: &Self) -> bool {
+        return self.name == other.name && self.id == other.id;
+    }
+}
+impl Eq for Variable {}
+
+impl Hash for Variable {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.id.hash(state);
+    }
 }
 
 impl Variable {
     pub fn new(name: String, id: usize) -> Self {
-        Variable { name: name, id: id }
+        Variable { name: name, id: id, assignment: Rc::new(RefCell::new(None)) }
     }
 
     pub fn brand_new(name: String) -> Self {
         Variable {
             name: name,
             id: next_id(),
+            assignment: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -86,6 +105,16 @@ impl Variable {
         dict.entry(self.clone())
             .or_insert_with(|| Self::brand_new(self.name.clone()))
             .clone()
+    }
+
+    pub fn assign(&mut self, mut term: Term, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+        let assignment =
+            match &mut *self.assignment.borrow_mut() {
+                &mut None => Some(term),
+                &mut Some(ref mut other) => return other.doit(&mut term, conditions, subst)
+            };
+        *self.assignment.borrow_mut() = assignment;
+        Ok(())
     }
 }
 
@@ -169,175 +198,159 @@ pub enum Term {
     List(List),
 }
 
-pub struct Assignment(pub HashMap<Variable, Term>);
-
-impl Assignment {
-    fn new() -> Self {
-        Assignment(HashMap::new())
-    }
-}
-
-type UnifyResult = Result<Assignment, String>;
-type Knowledge = Vec<Clause>;
+type Substitution = HashMap<Variable, Term>;
+type DeriveError = String;
 
 impl Predicate {
-    fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
-        if self.name == other.name {
-            self.arguments.unify(&other.arguments, knowledge)
-        } else {
-            Err("unifying different predicates".to_string())
+    pub fn derive(&self, knowledge: &[Clause], subst: &mut Substitution) -> Result<(), DeriveError> {
+        debug_println!("derive {}", self);
+        shift();
+        for mut fact in knowledge.iter().map(|c| c.instantiate(&mut HashMap::new())) {
+            if let Ok(_) = self.clone().doit(&mut fact.result, &mut fact.conditions, subst) {
+                if let Ok(()) = fact.conditions.derive(knowledge, subst) {
+                    unshift();
+                    return Ok(());
+                }
+            }
         }
+        unshift();
+        Err("No matching facts".into())
     }
 
-    fn apply(&mut self, substitutions: &Assignment) {
-        self.arguments.apply(substitutions)
-    }
-}
+    fn doit(&mut self, other: &mut Self, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+        debug_println!("PREDICATE: self = {}, other = {}", self, other); 
 
-impl List {
-    fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
         use List::*;
-        match (self, other) {
-            (&Nil, &Nil) => Ok(Assignment::new()),
-            (&Cons(ref lx, ref lxs), &Cons(ref rx, ref rxs)) => {
-                let mut head = lx.unify(rx, knowledge)?;
-                let tail = lxs.unify(rxs, knowledge)?;
-                head.apply(tail, knowledge)?;
-                Ok(head)
+        if self.name != other.name {
+            return Err("Predicate name mismatch".into())
+        }
+
+        let mut self_args = &mut self.arguments;
+        let mut other_args = &mut other.arguments;
+
+        loop {
+            match (self_args, other_args) {
+                (&mut Nil, &mut Nil) => return Ok(()),
+                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head, conditions, subst) {
+                    self_tail.apply(subst)?;
+                    other_tail.apply(subst)?;
+                    self_args = self_tail;
+                    other_args = other_tail;
+                } else {
+                    return Err("Failed to unify an element in a list".into())
+                },
+                _ => return Err("List size doesn't match".into()),
             }
-            _ => Err("cannot unify lists".to_string()),
         }
     }
 
-    fn apply(&mut self, substitutions: &Assignment) {
-        if let List::Cons(ref mut head, ref mut tail) = *self {
-            head.apply(substitutions);
-            tail.apply(substitutions);
-        }
-    }
-}
-
-impl Assignment {
-    fn apply(&mut self, mut s2: Assignment, knowledge: &Knowledge) -> Result<(), String> {
-        debug_println!("apply");
-        for (k, v) in s2.0.iter() {
-            debug_println!("\t{} => {}", k, v);
-        }
-        debug_println!("to");
-        for (k, v) in self.0.iter() {
-            debug_println!("\t{} => {}", k, v);
-        }
-        for (_, v) in self.0.iter_mut() {
-            v.apply(&s2);
-        }
-        for (_, v) in s2.0.iter_mut() {
-            v.apply(self);
-        }
-        for (k, v2) in s2.0.drain() {
-            let s = if let Some(v1) = self.0.get(&k) {
-                Some(v1.clone().unify(&v2, knowledge)?)
-            } else {
-                None
-            };
-            if let Some(s) = s {
-                self.apply(s, knowledge)?;
-            } else {
-                self.0.insert(k, v2);
-            }
-        }
-        debug_println!("result");
-        for (k, v) in self.0.iter() {
-            debug_println!("\t{} => {}", k, v);
+    fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
+        if let &mut List::Cons(ref mut head, ref mut tail) = &mut self.arguments {
+            head.apply(subst)?;
+            tail.apply(subst)?;
         }
         Ok(())
     }
 }
 
 impl Term {
+    pub fn derive(&self, knowledge: &[Clause], subst: &mut Substitution) -> Result<(), DeriveError> {
+        use Term::*;
+        match self {
+            &Var(ref v) => {
+                // anything can be derived
+                subst.insert(v.clone(), Var(v.clone()));
+                Ok(())
+            },
+            &Pred(ref pred) => pred.derive(knowledge, subst),
+            &List(ref list) => list.derive(knowledge, subst),
+        }
+    }
+
     pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
         use Term::*;
         match self {
-            &Var(ref var) => Var(var.instantiate(dict)),
-            &Pred(ref pred) => Pred(pred.instantiate(dict)),
-            &List(ref list) => List(list.instantiate(dict)),
+            &Var(ref v) => Var(v.instantiate(dict)),
+            &Pred(ref p) => Pred(p.instantiate(dict)),
+            &List(ref l) => List(l.instantiate(dict)),
         }
     }
 
-    pub fn derive(&self, knowledge: &Knowledge) -> UnifyResult {
-        shift();
-        debug_println!("deriving {} with:", self);
-        for fact in knowledge.iter() {
-            debug_println!("\t{}", fact);
-        }
-
-        for fact in knowledge.iter().map(
-            |fact| fact.instantiate(&mut HashMap::new()),
-        )
-        {
-            if let Ok(mut substitutions) = self.unify(&Term::Pred(fact.result.clone()), knowledge) {
-                debug_println!("unifying {} and {} success", self, fact.result);
-                let mut ok = true;
-                for mut condition in fact.conditions.iter().map(Clone::clone) {
-                    condition.apply(&substitutions);
-                    match condition.derive(knowledge) {
-                        Err(_) => {
-                            ok = false;
-                            break;
-                        }
-                        Ok(u) => substitutions.apply(u, knowledge)?,
-                    }
-                }
-
-                if ok {
-                    unshift();
-                    return Ok(substitutions);
-                }
-            }
-            debug_println!("unifying {} and {} failed", self, fact.result);
-        }
-        unshift();
-        Err("cannot derive it".to_string())
-    }
-
-    pub fn unify(&self, other: &Self, knowledge: &Knowledge) -> UnifyResult {
-        debug_println!("unifying {} and {}", self, other);
+    pub fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
         use Term::*;
+        *self = 
+            match self {
+                &mut Var(ref v) => 
+                    if let Some(term) = subst.get(v) {
+                        term.clone()
+                    } else {
+                        return Ok(())
+                    },
+                &mut Pred(ref mut p) => return p.apply(subst),
+                &mut List(ref mut l) => return l.apply(subst),
+            };
+        Ok(())
+    }
+
+    pub fn doit(&mut self, other: &mut Self, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+        debug_println!("TERM: self = {}, other = {}", self, other);
+        use Term::*;
+
         match (self, other) {
-            (&Var(ref v), other) => {
-                let mut unifications = Assignment::new();
-                debug_println!("add substution {} => {}", v, other);
-                unifications.0.insert(v.clone(), other.clone());
-                Ok(unifications)
-            }
-            (other, &Var(ref v)) => {
-                let mut unifications = Assignment::new();
-                debug_println!("add substution {} => {}", v, other);
-                unifications.0.insert(v.clone(), other.clone());
-                Ok(unifications)
-            }
-            (&Pred(ref lhs), &Pred(ref rhs)) => lhs.unify(rhs, knowledge),
-            (&List(ref lhs), &List(ref rhs)) => lhs.unify(rhs, knowledge),
-            _ => Err("cannot unify".to_string()),
-        }
-    }
-
-    fn apply(&mut self, substitutions: &Assignment) {
-        use Term::*;
-        let replace = match *self {
-            Var(ref v) => substitutions.0.get(v),
-            Pred(ref mut pred) => {
-                pred.apply(substitutions);
-                None
-            }
-            List(ref mut list) => {
-                list.apply(substitutions);
-                None
-            }
-        };
-
-        if let Some(term) = replace {
-            debug_println!("replace {} with {}", self, term);
-            *self = term.clone();
+            (&mut Var(ref mut v), ref mut o) => {
+                // TODO: need occurs check
+                subst.insert(v.clone(), o.clone());
+                v.assign(o.clone(), conditions, subst)
+            },
+            (ref mut this, &mut Var(ref mut v)) => {
+                // TODO: need occurs check
+                subst.insert(v.clone(), this.clone());
+                v.assign(this.clone(), conditions, subst)
+            },
+            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o, conditions, subst),
+            (&mut List(ref mut this), &mut List(ref mut o)) => this.doit(o, conditions, subst),
+            _ => Err("Term type doesn't match".into()),
         }
     }
 }
+
+impl List {
+    pub fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
+        use List::*;
+        match self {
+            &mut Nil => Ok(()),
+            &mut Cons(ref mut head, ref mut tail) => {
+                head.apply(subst)?;
+                tail.apply(subst)?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn doit(&mut self, other: &mut Self, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+        debug_println!("LIST: self = {}, other = {}", self, other);
+        use List::*;
+        match (self, other) {
+            (&mut Nil, &mut Nil) => Ok(()),
+            (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) =>  {
+                self_head.doit(other_head, conditions, subst)?;
+                self_tail.doit(other_tail, conditions, subst)?;
+                Ok(())
+            },
+            _ => Err("List size doesn't match".into())
+        }
+    }
+
+    // derivation of a list means derivation of the conjunction of each element
+    pub fn derive(&self, knowledge: &[Clause], subst: &mut Substitution) -> Result<(), DeriveError> {
+        use List::*;
+        match self {
+            &Nil => Ok(()),
+            &Cons(ref head, ref tail) => {
+                head.derive(knowledge, subst)?;
+                tail.derive(knowledge, subst)
+            }
+        }
+    }
+}
+

@@ -10,7 +10,15 @@ impl Display for Atom {
 
 impl Display for Variable {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{}{}", self.name, self.id)
+        write!(f, "{}{}", self.name, self.id)?;
+        match *self.assignment.borrow() {
+            None => write!(f, "[None]"),
+            Some(ref term) => {
+                write!(f, "[")?;
+                term.fmt(f)?;
+                write!(f, "]")
+            },
+        }
     }
 }
 
