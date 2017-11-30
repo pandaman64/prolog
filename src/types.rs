@@ -107,11 +107,11 @@ impl Variable {
             .clone()
     }
 
-    pub fn assign(&mut self, mut term: Term, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn assign(&mut self, mut term: Term, subst: &mut Substitution) -> Result<(), DeriveError> {
         let assignment =
             match &mut *self.assignment.borrow_mut() {
                 &mut None => Some(term),
-                &mut Some(ref mut other) => return other.doit(&mut term, conditions, subst)
+                &mut Some(ref mut other) => return other.doit(&mut term, subst)
             };
         *self.assignment.borrow_mut() = assignment;
         Ok(())
@@ -206,7 +206,7 @@ impl Predicate {
         debug_println!("derive {}", self);
         shift();
         for mut fact in knowledge.iter().map(|c| c.instantiate(&mut HashMap::new())) {
-            if let Ok(_) = self.clone().doit(&mut fact.result, &mut fact.conditions, subst) {
+            if let Ok(_) = self.clone().doit(&mut fact.result, subst) {
                 if let Ok(()) = fact.conditions.derive(knowledge, subst) {
                     unshift();
                     return Ok(());
@@ -217,7 +217,7 @@ impl Predicate {
         Err("No matching facts".into())
     }
 
-    fn doit(&mut self, other: &mut Self, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+    fn doit(&mut self, other: &mut Self, subst: &mut Substitution) -> Result<(), DeriveError> {
         debug_println!("PREDICATE: self = {}, other = {}", self, other); 
 
         use List::*;
@@ -231,7 +231,7 @@ impl Predicate {
         loop {
             match (self_args, other_args) {
                 (&mut Nil, &mut Nil) => return Ok(()),
-                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head, conditions, subst) {
+                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head, subst) {
                     self_tail.apply(subst)?;
                     other_tail.apply(subst)?;
                     self_args = self_tail;
@@ -245,6 +245,7 @@ impl Predicate {
     }
 
     fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
+        return Ok(());
         if let &mut List::Cons(ref mut head, ref mut tail) = &mut self.arguments {
             head.apply(subst)?;
             tail.apply(subst)?;
@@ -277,6 +278,7 @@ impl Term {
     }
 
     pub fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
+        return Ok(());
         use Term::*;
         *self = 
             match self {
@@ -292,7 +294,7 @@ impl Term {
         Ok(())
     }
 
-    pub fn doit(&mut self, other: &mut Self, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn doit(&mut self, other: &mut Self, subst: &mut Substitution) -> Result<(), DeriveError> {
         debug_println!("TERM: self = {}, other = {}", self, other);
         use Term::*;
 
@@ -300,15 +302,15 @@ impl Term {
             (&mut Var(ref mut v), ref mut o) => {
                 // TODO: need occurs check
                 subst.insert(v.clone(), o.clone());
-                v.assign(o.clone(), conditions, subst)
+                v.assign(o.clone(), subst)
             },
             (ref mut this, &mut Var(ref mut v)) => {
                 // TODO: need occurs check
                 subst.insert(v.clone(), this.clone());
-                v.assign(this.clone(), conditions, subst)
+                v.assign(this.clone(), subst)
             },
-            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o, conditions, subst),
-            (&mut List(ref mut this), &mut List(ref mut o)) => this.doit(o, conditions, subst),
+            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o, subst),
+            (&mut List(ref mut this), &mut List(ref mut o)) => this.doit(o, subst),
             _ => Err("Term type doesn't match".into()),
         }
     }
@@ -316,6 +318,7 @@ impl Term {
 
 impl List {
     pub fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
+        return Ok(());
         use List::*;
         match self {
             &mut Nil => Ok(()),
@@ -327,14 +330,14 @@ impl List {
         }
     }
 
-    pub fn doit(&mut self, other: &mut Self, conditions: &mut List, subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn doit(&mut self, other: &mut Self, subst: &mut Substitution) -> Result<(), DeriveError> {
         debug_println!("LIST: self = {}, other = {}", self, other);
         use List::*;
         match (self, other) {
             (&mut Nil, &mut Nil) => Ok(()),
             (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) =>  {
-                self_head.doit(other_head, conditions, subst)?;
-                self_tail.doit(other_tail, conditions, subst)?;
+                self_head.doit(other_head, subst)?;
+                self_tail.doit(other_tail, subst)?;
                 Ok(())
             },
             _ => Err("List size doesn't match".into())
