@@ -1,5 +1,5 @@
 use std::io::{self, BufRead};
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 mod types;
 mod parser;
@@ -24,13 +24,13 @@ fn main() {
                     }
                     Command::Question(question) => {
                         println!("asked: {}", question);
-                        let mut subst = HashMap::new();
+                        let mut subst = HashSet::new();
                         match question.derive(&knowledge, &mut subst) {
                             Err(error) => println!("false: {}", error),
                             Ok(()) => {
                                 println!("true");
-                                for (k, v) in subst.iter() {
-                                    println!("  {} => {}", k, v);
+                                for v in subst.iter() {
+                                    println!("  {}", v);
                                 }
                             }
                         }

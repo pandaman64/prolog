@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashSet, HashMap};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::{PartialEq, Eq};
@@ -107,7 +107,7 @@ impl Variable {
             .clone()
     }
 
-    pub fn assign(&mut self, mut term: Term, subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn assign(&mut self, mut term: Term, subst: &mut Variables) -> Result<(), DeriveError> {
         let assignment =
             match &mut *self.assignment.borrow_mut() {
                 &mut None => Some(term),
@@ -198,11 +198,11 @@ pub enum Term {
     List(List),
 }
 
-type Substitution = HashMap<Variable, Term>;
+type Variables = HashSet<Variable>;
 type DeriveError = String;
 
 impl Predicate {
-    pub fn derive(&self, knowledge: &[Clause], subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn derive(&self, knowledge: &[Clause], subst: &mut Variables) -> Result<(), DeriveError> {
         debug_println!("derive {}", self);
         shift();
         for mut fact in knowledge.iter().map(|c| c.instantiate(&mut HashMap::new())) {
@@ -217,7 +217,7 @@ impl Predicate {
         Err("No matching facts".into())
     }
 
-    fn doit(&mut self, other: &mut Self, subst: &mut Substitution) -> Result<(), DeriveError> {
+    fn doit(&mut self, other: &mut Self, subst: &mut Variables) -> Result<(), DeriveError> {
         debug_println!("PREDICATE: self = {}, other = {}", self, other); 
 
         use List::*;
@@ -232,8 +232,6 @@ impl Predicate {
             match (self_args, other_args) {
                 (&mut Nil, &mut Nil) => return Ok(()),
                 (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head, subst) {
-                    self_tail.apply(subst)?;
-                    other_tail.apply(subst)?;
                     self_args = self_tail;
                     other_args = other_tail;
                 } else {
@@ -243,24 +241,15 @@ impl Predicate {
             }
         }
     }
-
-    fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
-        return Ok(());
-        if let &mut List::Cons(ref mut head, ref mut tail) = &mut self.arguments {
-            head.apply(subst)?;
-            tail.apply(subst)?;
-        }
-        Ok(())
-    }
 }
 
 impl Term {
-    pub fn derive(&self, knowledge: &[Clause], subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn derive(&self, knowledge: &[Clause], subst: &mut Variables) -> Result<(), DeriveError> {
         use Term::*;
         match self {
             &Var(ref v) => {
                 // anything can be derived
-                subst.insert(v.clone(), Var(v.clone()));
+                subst.insert(v.clone());
                 Ok(())
             },
             &Pred(ref pred) => pred.derive(knowledge, subst),
@@ -277,36 +266,19 @@ impl Term {
         }
     }
 
-    pub fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
-        return Ok(());
-        use Term::*;
-        *self = 
-            match self {
-                &mut Var(ref v) => 
-                    if let Some(term) = subst.get(v) {
-                        term.clone()
-                    } else {
-                        return Ok(())
-                    },
-                &mut Pred(ref mut p) => return p.apply(subst),
-                &mut List(ref mut l) => return l.apply(subst),
-            };
-        Ok(())
-    }
-
-    pub fn doit(&mut self, other: &mut Self, subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn doit(&mut self, other: &mut Self, subst: &mut Variables) -> Result<(), DeriveError> {
         debug_println!("TERM: self = {}, other = {}", self, other);
         use Term::*;
 
         match (self, other) {
             (&mut Var(ref mut v), ref mut o) => {
                 // TODO: need occurs check
-                subst.insert(v.clone(), o.clone());
+                subst.insert(v.clone());
                 v.assign(o.clone(), subst)
             },
             (ref mut this, &mut Var(ref mut v)) => {
                 // TODO: need occurs check
-                subst.insert(v.clone(), this.clone());
+                subst.insert(v.clone());
                 v.assign(this.clone(), subst)
             },
             (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o, subst),
@@ -317,20 +289,7 @@ impl Term {
 }
 
 impl List {
-    pub fn apply(&mut self, subst: &Substitution) -> Result<(), DeriveError> {
-        return Ok(());
-        use List::*;
-        match self {
-            &mut Nil => Ok(()),
-            &mut Cons(ref mut head, ref mut tail) => {
-                head.apply(subst)?;
-                tail.apply(subst)?;
-                Ok(())
-            }
-        }
-    }
-
-    pub fn doit(&mut self, other: &mut Self, subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn doit(&mut self, other: &mut Self, subst: &mut Variables) -> Result<(), DeriveError> {
         debug_println!("LIST: self = {}, other = {}", self, other);
         use List::*;
         match (self, other) {
@@ -345,7 +304,7 @@ impl List {
     }
 
     // derivation of a list means derivation of the conjunction of each element
-    pub fn derive(&self, knowledge: &[Clause], subst: &mut Substitution) -> Result<(), DeriveError> {
+    pub fn derive(&self, knowledge: &[Clause], subst: &mut Variables) -> Result<(), DeriveError> {
         use List::*;
         match self {
             &Nil => Ok(()),
