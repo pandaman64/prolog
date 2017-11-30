@@ -27,9 +27,12 @@ fn main() {
                         let mut subst = HashSet::new();
                         match question.derive(&knowledge, &mut subst) {
                             Err(error) => println!("false: {}", error),
-                            Ok(()) => {
+                            Ok(vs) => {
                                 println!("true");
                                 for v in subst.iter() {
+                                    println!("  {}", v);
+                                }
+                                for v in vs.iter() {
                                     println!("  {}", v);
                                 }
                             }
