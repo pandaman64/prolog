@@ -102,9 +102,14 @@ impl Variable {
     }
 
     pub fn instantiate(&self, dict: &mut HashMap<Variable, Variable>) -> Self {
-        dict.entry(self.clone())
-            .or_insert_with(|| Self::brand_new(self.name.clone()))
-            .clone()
+        // assigned varaible should not be instantiated
+        if let Some(_) = *self.assignment.borrow() {
+            self.clone()
+        } else {
+            dict.entry(self.clone())
+                .or_insert_with(|| Self::brand_new(self.name.clone()))
+                .clone()
+        }
     }
 
     pub fn assign(&mut self, mut term: Term) -> Result<(), DeriveError> {
