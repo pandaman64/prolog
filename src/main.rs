@@ -1,5 +1,4 @@
 use std::io::{self, BufRead};
-use std::collections::HashSet;
 
 mod types;
 mod parser;
@@ -24,15 +23,11 @@ fn main() {
                     }
                     Command::Question(question) => {
                         println!("asked: {}", question);
-                        let mut subst = HashSet::new();
-                        match question.derive(&knowledge, &mut subst) {
+                        match question.derive(&knowledge) {
                             Err(error) => println!("false: {}", error),
-                            Ok(vs) => {
+                            Ok(subst) => {
                                 println!("true");
                                 for v in subst.iter() {
-                                    println!("  {}", v);
-                                }
-                                for v in vs.iter() {
                                     println!("  {}", v);
                                 }
                             }

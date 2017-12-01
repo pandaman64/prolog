@@ -107,12 +107,12 @@ impl Variable {
             .clone()
     }
 
-    pub fn assign(&mut self, mut term: Term, variables: &mut Variables) -> Result<(), DeriveError> {
+    pub fn assign(&mut self, mut term: Term) -> Result<(), DeriveError> {
         let assignment =
             match &mut *self.assignment.borrow_mut() {
                 &mut None => Some(term),
                 &mut Some(ref mut other) => {
-                    other.doit(&mut term, variables)?;
+                    other.doit(&mut term)?;
                     None
                 }
             };
@@ -233,17 +233,16 @@ impl Predicate {
         self.arguments.variables()
     }
 
-    pub fn derive(&self, knowledge: &[Clause], variables: &mut Variables) -> Result<Variables, DeriveError> {
+    pub fn derive(&self, knowledge: &[Clause]) -> Result<Variables, DeriveError> {
         debug_println!("derive {}", self);
         shift();
         for mut fact in knowledge.iter().map(|c| c.instantiate(&mut HashMap::new())) {
             let mut target = self.clone();
-            if let Ok(_) = target.doit(&mut fact.result, variables) {
-                if let Ok(()) = fact.conditions.derive(knowledge, variables) {
+            if let Ok(()) = target.doit(&mut fact.result) {
+                // discard the variables in conditions 
+                // because only the top level variables will be returned
+                if let Ok(_) = fact.conditions.derive(knowledge) {
                     unshift();
-                    for v in variables.iter() {
-                        v.compress();
-                    }
                     let vs = target.variables();
                     for v in vs.iter() {
                         v.compress();
@@ -256,7 +255,7 @@ impl Predicate {
         Err("No matching facts".into())
     }
 
-    fn doit(&mut self, other: &mut Self, variables: &mut Variables) -> Result<(), DeriveError> {
+    fn doit(&mut self, other: &mut Self) -> Result<(), DeriveError> {
         debug_println!("PREDICATE: self = {}, other = {}", self, other); 
 
         use List::*;
@@ -270,7 +269,7 @@ impl Predicate {
         loop {
             match (self_args, other_args) {
                 (&mut Nil, &mut Nil) => return Ok(()),
-                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head, variables) {
+                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head) {
                     self_args = self_tail;
                     other_args = other_tail;
                 } else {
@@ -297,19 +296,17 @@ impl Term {
         }
     }
 
-    pub fn derive(&self, knowledge: &[Clause], variables: &mut Variables) -> Result<Variables, DeriveError> {
+    pub fn derive(&self, knowledge: &[Clause]) -> Result<Variables, DeriveError> {
         use Term::*;
         match self {
             &Var(ref v) => {
                 // anything can be derived
-                variables.insert(v.clone());
-                Ok(variables.clone())
+                let mut ret = HashSet::new();
+                ret.insert(v.clone());
+                Ok(ret)
             },
-            &Pred(ref pred) => pred.derive(knowledge, variables),
-            &List(ref list) => {
-                list.derive(knowledge, variables)?;
-                Ok(variables.clone())
-            },
+            &Pred(ref pred) => pred.derive(knowledge),
+            &List(ref list) => list.derive(knowledge),
         }
     }
 
@@ -322,23 +319,21 @@ impl Term {
         }
     }
 
-    pub fn doit(&mut self, other: &mut Self, variables: &mut Variables) -> Result<(), DeriveError> {
+    pub fn doit(&mut self, other: &mut Self) -> Result<(), DeriveError> {
         debug_println!("TERM: self = {}, other = {}", self, other);
         use Term::*;
 
         match (self, other) {
             (&mut Var(ref mut v), ref mut o) => {
                 // TODO: need occurs check
-                variables.insert(v.clone());
-                v.assign(o.clone(), variables)
+                v.assign(o.clone())
             },
             (ref mut this, &mut Var(ref mut v)) => {
                 // TODO: need occurs check
-                variables.insert(v.clone());
-                v.assign(this.clone(), variables)
+                v.assign(this.clone())
             },
-            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o, variables),
-            (&mut List(ref mut this), &mut List(ref mut o)) => this.doit(o, variables),
+            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o),
+            (&mut List(ref mut this), &mut List(ref mut o)) => this.doit(o),
             _ => Err("Term type doesn't match".into()),
         }
     }
@@ -359,14 +354,14 @@ impl List {
         }
     }
 
-    pub fn doit(&mut self, other: &mut Self, variables: &mut Variables) -> Result<(), DeriveError> {
+    pub fn doit(&mut self, other: &mut Self) -> Result<(), DeriveError> {
         debug_println!("LIST: self = {}, other = {}", self, other);
         use List::*;
         match (self, other) {
             (&mut Nil, &mut Nil) => Ok(()),
             (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) =>  {
-                self_head.doit(other_head, variables)?;
-                self_tail.doit(other_tail, variables)?;
+                self_head.doit(other_head)?;
+                self_tail.doit(other_tail)?;
                 Ok(())
             },
             _ => Err("List size doesn't match".into())
@@ -374,13 +369,16 @@ impl List {
     }
 
     // derivation of a list means derivation of the conjunction of each element
-    pub fn derive(&self, knowledge: &[Clause], variables: &mut Variables) -> Result<(), DeriveError> {
+    pub fn derive(&self, knowledge: &[Clause]) -> Result<Variables, DeriveError> {
         use List::*;
         match self {
-            &Nil => Ok(()),
+            &Nil => Ok(HashSet::new()),
             &Cons(ref head, ref tail) => {
-                head.derive(knowledge, variables)?;
-                tail.derive(knowledge, variables)
+                let mut ret = head.derive(knowledge)?;
+                for v in tail.derive(knowledge)?.into_iter() {
+                    ret.insert(v);
+                }
+                Ok(ret)
             }
         }
     }
