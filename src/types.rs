@@ -111,10 +111,37 @@ impl Variable {
         let assignment =
             match &mut *self.assignment.borrow_mut() {
                 &mut None => Some(term),
-                &mut Some(ref mut other) => return other.doit(&mut term, variables)
+                &mut Some(ref mut other) => {
+                    other.doit(&mut term, variables)?;
+                    None
+                }
             };
-        *self.assignment.borrow_mut() = assignment;
+        if let Some(term) = assignment {
+            *self.assignment.borrow_mut() = Some(term);
+        }
+        self.compress();
         Ok(())
+    }
+
+    fn compress(&self) {
+        use Term::*;
+        let assignment = 
+            if let &mut Some(ref mut term) = &mut *self.assignment.borrow_mut() {
+                match *term {
+                    Var(ref mut v) => {
+                        v.compress();
+                        if let &mut Some(ref t) = &mut *v.assignment.borrow_mut() {
+                            t.clone()
+                        } else {
+                            return;
+                        }
+                    },
+                    _ => return,
+                }
+            } else {
+                return;
+            };
+        *self.assignment.borrow_mut() = Some(assignment);
     }
 }
 
@@ -214,7 +241,14 @@ impl Predicate {
             if let Ok(_) = target.doit(&mut fact.result, variables) {
                 if let Ok(()) = fact.conditions.derive(knowledge, variables) {
                     unshift();
-                    return Ok(target.variables());
+                    for v in variables.iter() {
+                        v.compress();
+                    }
+                    let vs = target.variables();
+                    for v in vs.iter() {
+                        v.compress();
+                    }
+                    return Ok(vs);
                 }
             }
         }
