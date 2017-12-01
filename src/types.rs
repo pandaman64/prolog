@@ -238,6 +238,8 @@ impl Predicate {
         shift();
         for mut fact in knowledge.iter().map(|c| c.instantiate(&mut HashMap::new())) {
             let mut target = self.clone();
+            // this changes the shared state of variables within self
+            // so we need to some reset
             if let Ok(()) = target.doit(&mut fact.result) {
                 // discard the variables in conditions 
                 // because only the top level variables will be returned
