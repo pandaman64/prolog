@@ -117,7 +117,7 @@ impl Variable {
             match &mut *self.assignment.borrow_mut() {
                 &mut None => Some(term),
                 &mut Some(ref mut other) => {
-                    other.doit(&mut term)?;
+                    other.unify(&mut term)?;
                     None
                 }
             };
@@ -125,6 +125,7 @@ impl Variable {
             *self.assignment.borrow_mut() = Some(term);
         }
         self.compress();
+        debug_println!("assign {} <= {}", self, self.assignment.borrow().as_ref().unwrap());
         Ok(())
     }
 
@@ -245,7 +246,7 @@ impl Predicate {
             let mut target = self.clone();
             // this changes the shared state of variables within self
             // so we need to some reset
-            if let Ok(()) = target.doit(&mut fact.result) {
+            if let Ok(()) = target.unify(&mut fact.result) {
                 // discard the variables in conditions 
                 // because only the top level variables will be returned
                 if let Ok(_) = fact.conditions.derive(knowledge) {
@@ -262,7 +263,7 @@ impl Predicate {
         Err("No matching facts".into())
     }
 
-    fn doit(&mut self, other: &mut Self) -> Result<(), DeriveError> {
+    fn unify(&mut self, other: &mut Self) -> Result<(), DeriveError> {
         debug_println!("PREDICATE: self = {}, other = {}", self, other); 
 
         use List::*;
@@ -276,7 +277,7 @@ impl Predicate {
         loop {
             match (self_args, other_args) {
                 (&mut Nil, &mut Nil) => return Ok(()),
-                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.doit(other_head) {
+                (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) => if let Ok(()) = self_head.unify(other_head) {
                     self_args = self_tail;
                     other_args = other_tail;
                 } else {
@@ -326,7 +327,7 @@ impl Term {
         }
     }
 
-    pub fn doit(&mut self, other: &mut Self) -> Result<(), DeriveError> {
+    pub fn unify(&mut self, other: &mut Self) -> Result<(), DeriveError> {
         debug_println!("TERM: self = {}, other = {}", self, other);
         use Term::*;
 
@@ -339,8 +340,8 @@ impl Term {
                 // TODO: need occurs check
                 v.assign(this.clone())
             },
-            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.doit(o),
-            (&mut List(ref mut this), &mut List(ref mut o)) => this.doit(o),
+            (&mut Pred(ref mut this), &mut Pred(ref mut o)) => this.unify(o),
+            (&mut List(ref mut this), &mut List(ref mut o)) => this.unify(o),
             _ => Err("Term type doesn't match".into()),
         }
     }
@@ -361,14 +362,14 @@ impl List {
         }
     }
 
-    pub fn doit(&mut self, other: &mut Self) -> Result<(), DeriveError> {
+    pub fn unify(&mut self, other: &mut Self) -> Result<(), DeriveError> {
         debug_println!("LIST: self = {}, other = {}", self, other);
         use List::*;
         match (self, other) {
             (&mut Nil, &mut Nil) => Ok(()),
             (&mut Cons(ref mut self_head, ref mut self_tail), &mut Cons(ref mut other_head, ref mut other_tail)) =>  {
-                self_head.doit(other_head)?;
-                self_tail.doit(other_tail)?;
+                self_head.unify(other_head)?;
+                self_tail.unify(other_tail)?;
                 Ok(())
             },
             _ => Err("List size doesn't match".into())
