@@ -243,19 +243,23 @@ impl Predicate {
         debug_println!("derive {}", self);
         shift();
         for mut fact in knowledge.iter().map(|c| c.instantiate(&mut HashMap::new())) {
-            let mut target = self.clone();
+            let mut dict = self.variables().into_iter().map(|v| {
+                let to = Variable::brand_new(v.name.clone());
+                (v, to)
+            }).collect::<HashMap<_, _>>();
+
             // this changes the shared state of variables within self
             // so we need to some reset
-            if let Ok(()) = target.unify(&mut fact.result) {
+            if let Ok(()) = self.instantiate(&mut dict).unify(&mut fact.result) {
                 // discard the variables in conditions 
                 // because only the top level variables will be returned
                 if let Ok(_) = fact.conditions.derive(knowledge) {
                     unshift();
-                    let vs = target.variables();
-                    for v in vs.iter() {
-                        v.compress();
+                    for mut v in self.variables().into_iter() {
+                        let other = Term::Var(dict[&v].clone());
+                        v.assign(other).unwrap();
                     }
-                    return Ok(vs);
+                    return Ok(self.variables());
                 }
             }
         }
